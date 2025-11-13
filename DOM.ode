@@ -1,0 +1,274 @@
+# DOM.ode
+#
+# The Dual Oscillator Model from Bertram et al., Biophysical Journal, 87:3074-3087, 2004.
+
+v(0)=-60
+n(0)=0
+c(0)=0.1
+adp(0)=780
+cer(0)=185
+I(0)=0.0
+g6p(0)=200
+fbp(0)=40
+
+# Parameter vlaues for various behaviors:
+#
+# Bursts of bursts: rgk=0.2, gkatp=28000, gkca=600
+# Subthreshold oscillations: rgk=0.2, gkatp=34000, gkca=150
+# Glycolytic bursting: rgk=0.2, gkatp=30000, gkca=150
+# Regular bursting: rgk=0.4, gkatp=30000, gkca=400
+# Accordion bursting: rgk=0.2, gkatp=24000, gkca=600, kg=10
+
+# New Compound bursting: rgk=0.2, gkatp=25000, gkca=600, kg=10
+# New Glycolytic bursting: rgk=0.2, gkatp=27000, gkca=100, kg=10
+# New Regular bursting: rgk=0.4, gkatp=25000, gkca=600, kg=10
+# New Subthreshold oscillations: rgk=0.2, gkatp=30000, gkca=100, kg=10
+# New Accordion bursting: rgk=0.2, gkatp=23000, gkca=600, kg=10
+
+# ----------------------------------------------------------------
+# Membrane and Ca components
+
+# sigmav=cyt volume/ER volume
+num pleak=0.0002, sigmav=31
+num kserca=0.4
+num lambdaer=1, epser=1
+num vm=-20,sm=12,vn=-16,sn=5,taun=20
+
+# where
+minf = 1/(1+exp((vm-v)/sm))
+ninf = 1/(1+exp((vn-v)/sn))
+
+# speed of glycolytic oscillations
+num speed=5
+
+num vk=-75, vca=25
+num gk=2700, cm=5300
+num gca=1000
+num kd=0.5, nh=2
+
+param gkca=600
+
+# Ikca
+ikca = gkca/(1+(kd/c)^nh)*(v-vk)
+
+# Calcium Handling
+num alpha=4.50e-6, kpmca=0.2, fcyt=0.01, fer=0.01
+
+# Ikatp
+par gkatpbar=25000
+
+# ICa
+ica = gca*minf*(v-vca)
+
+# Ik
+Ik = gk*n*(v-vk)
+
+# IKATP
+# ikatp = freezeatp*gkatpstar*(v-vk) +
+# (1-freezeatp)*gkatpbar*(v-vk)*(1.0+d/kone)/(1.0+d/kone+(tot-d)/ktwo)
+
+# Ca fluxes
+Jmem = -(alpha*Ica + kpmca*c)
+
+Jserca = kserca*c
+Jleak = pleak*(cer - c)
+Jer = epser*(Jleak - Jserca)/lambdaer
+
+# -----------------------------------------------------
+# Glycolytic and Keizer-Magnus components
+
+# g6p -- glucose 6-phosphate
+# fbp -- fructose 1,6-bisphosphate
+
+# Parameters
+#  Rgk--glucokinase rate
+#  atot--total adenine nucleotide concentration (micromolar)
+#  k1--Kd for AMP binding
+#  k2--Kd for FBP binding
+#  k3--Kd for F6P binding
+#  k4--Kd for ATP binding
+#  famp,etc--Kd amplification factors for heterotropic binding
+#  Rgpdh--glyceraldehyde phosphate dehydrogenase rate
+#  convert--converts time from sec to msec
+
+# Glycolytic parameters
+#  par kg=2.2
+par kg=10
+par Rgk=0.2
+num atot=3000
+num k1=30, k2=1, k3=50000, k4=1000
+num famp=0.02, fatp=20, ffbp=0.2, fbt=20, fmt=20, pfkbas=0.06
+number cat=2
+num katpase=0.0003
+num convert=0.001
+
+# Glycolytic expressions
+f6p = 0.3*g6p
+Rgpdh = 0.2*sqrt(fbp)
+
+# Iterative calculation of PFK
+# alpha=1 -- AMP bound
+# beta=1 -- FBP bound
+# gamma=1 -- F6P bound
+# delta=1 -- ATP bound
+
+# (alpha,beta,gamma,delta)
+# (0,0,0,0)
+weight1=1
+topa1=0
+bottom1=1
+
+# (0,0,0,1)
+weight2=atp^2/k4
+topa2=topa1
+bottom2=bottom1+weight2
+
+# (0,0,1,0)
+weight3=f6p^2/k3
+topa3=topa2+weight3
+bottom3=bottom2+weight3
+
+# (0,0,1,1)
+weight4=(f6p*atp)^2/(fatp*k3*k4)
+topa4=topa3+weight4
+bottom4=bottom3+weight4
+
+# (0,1,0,0)
+weight5=fbp/k2
+topa5=topa4
+bottom5=bottom4+weight5
+
+# (0,1,0,1)
+weight6=(fbp*atp^2)/(k2*k4*fbt)
+topa6=topa5
+bottom6=bottom5+weight6
+
+# (0,1,1,0)
+weight7=(fbp*f6p^2)/(k2*k3*ffbp)
+topa7=topa6+weight7
+bottom7=bottom6+weight7
+
+# (0,1,1,1)
+weight8=(fbp*f6p^2*atp^2)/(k2*k3*k4*ffbp*fbt*fatp)
+topa8=topa7+weight8
+bottom8=bottom7+weight8
+
+# (1,0,0,0)
+weight9=amp/k1
+topa9=topa8
+bottom9=bottom8+weight9
+
+# (1,0,0,1)
+weight10=(amp*atp^2)/(k1*k4*fmt)
+topa10=topa9
+bottom10=bottom9+weight10
+
+# (1,0,1,0)
+weight11=(amp*f6p^2)/(k1*k3*famp)
+topa11=topa10+weight11
+bottom11=bottom10+weight11
+
+# (1,0,1,1)
+weight12=(amp*f6p^2*atp^2)/(k1*k3*k4*famp*fmt*fatp)
+topa12=topa11+weight12
+bottom12=bottom11+weight12
+
+# (1,1,0,0)
+weight13=(amp*fbp)/(k1*k2)
+topa13=topa12
+bottom13=bottom12+weight13
+
+# (1,1,0,1)
+weight14=(amp*fbp*atp^2)/(k1*k2*k4*fbt*fmt)
+topa14=topa13
+bottom14=bottom13+weight14
+
+# (1,1,1,0) -- the most active state of the enzyme
+weight15=(amp*fbp*f6p^2)/(k1*k2*k3*ffbp*famp)
+topa15=topa14
+topb=weight15
+bottom15=bottom14+weight15
+
+# (1,1,1,1)
+weight16=(amp*fbp*f6p^2*atp^2)/(k1*k2*k3*k4*ffbp*famp*fbt*fmt*fatp)
+topa16=topa15+weight16
+bottom16=bottom15+weight16
+
+# Phosphofructokinase rate
+% rate=(pfkbas*cat*topa16 + cat*topb)/bottom16
+% pfk=rate*(atp/(atp+2))    atp saturates
+pfk=(pfkbas*cat*topa16 + cat*topb)/bottom16
+
+# KATP channel
+# Dissociation constants (from Magnus and Keizer, 1998, ref.
+# 1264)
+num kdd=17, ktd=26, ktt=1
+par r=1
+num vg=2.2
+num taua=300000, r1=0.35
+
+# Functions
+
+# nucleotide concentrations, based on eqs. 14 and 15 from Smolen, ref. 1265.
+rad = sqrt((adp-atot)^2-4*adp^2)
+atp = 0.5*(atot-adp+rad)
+amp = adp^2/atp
+ratio = atp/adp
+
+% KATP channel open probability (from Magnus and Keizer, 1998, ref. 1264)
+mgadp = 0.165*adp
+adp3m = 0.135*adp
+atp4m = 0.05*atp
+topo = 0.08*(1+2*mgadp/kdd) + 0.89*(mgadp/kdd)^2
+bottomo = (1+mgadp/kdd)^2 * (1+adp3m/ktd+atp4m/ktt)
+katpo = topo/bottomo
+ikatp = gkatpbar*katpo*(v-vk)
+
+# glycolytic feedback onto adp
+y = vg*(Rgpdh/(kg+Rgpdh))
+fback = r+y
+
+
+# ----------------------------------------------------
+# Insulin secretion component
+
+# insulin secretion (data from Barg show that taui .leq. 1 s)
+num taui=1000
+num ki=0.15
+num delta=8
+
+Iinf = (c^delta)/(ki^delta + c^delta)
+
+# AUTO parameters
+num autoc=1, cknot=0.1, autoadp=1, adpknot=800, autocer=1, cerknot=50
+
+
+# ------------------------------------------------------
+# Differential equations
+
+v' = -(Ik + Ica + Ikca + Ikatp)/cm
+n' = (ninf-n)/taun
+c' = fcyt*(Jmem + Jer)
+adp' = autoadp*((atp-adp*exp(fback*(1-c/r1)))/taua) + (1-autoadp)*(adpknot-adp)
+cer' = -fer*sigmav*Jer
+g6p' = speed*convert*(Rgk - pfk)
+fbp' = speed*convert*(pfk - 0.5*Rgpdh)
+I' = (Iinf-I)/taui
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=20.0, total=300000,
+@ maxstor=20000,bounds=10000000, xp=tmin, yp=v
+@ xlo=0, xhi=5, ylo=-70, yhi=-10
+
+# aux itot=(ica + ik + ikatp  + ikca + icrac)/1000
+aux tsec=t/1000
+aux tmin=t/60000
+% aux w=omega
+aux RGPDH=Rgpdh
+aux GKCA=gkca/(1+(kd/c)^nh)
+aux GKATP=gkatpbar*katpo
+aux Atp=atp/1000
+aux ratio=atp/adp
+% aux Katpo=katpo
+aux PFK=pfk
+
+done
