@@ -1,0 +1,76 @@
+# GO.ode
+# A model for glycolytic oscillations from 
+# J. P. McKenna, R. Dhumpa, N. Mukhitov, M. G. Roper, and R. Bertram,
+# PLoS Computational Biology, 12(10):e1005143, doi:10.1371/journal.pcbi.1005143, 2016.
+
+% Initial conditions
+f6p(0)=51.11675842
+fbp(0)=8.30414141
+
+# ATP level
+par atp=1800
+
+##############
+# Glycolysis #
+##############
+
+## glucose transporter (GLUT)
+p glce=7 
+
+## glucokinase (GK)
+p vgk=.0111,kgk=13.,hgkglc=4.
+jgk=vgk/(1.+(kgk/glce)^hgkglc)
+
+
+## glucose 6-phosphate isomerase (GPI)
+!kgpi=10./3.
+
+## phosphofructokinase (PFK), adapted from Smolen 1995
+p vpfk=.0104,kpfkbas=.06,kpfkamp=30.,kpfkfbp=1.,kpfkf6p=5e4,kpfkatp=1e3
+p famp=.02,fmt=20.,ffbp=.2,fbt=20.,fatp=20.
+pow[0..63]=mod(flr(flr([j]/4)*2^(mod([j],4)-3)),2)
+w[0..15]=\
+(amp/kpfkamp)^shift(pow0,4*[j])*\
+(fbp/kpfkfbp)^shift(pow0,4*[j]+1)*\
+(f6p^2/kpfkf6p)^shift(pow0,4*[j]+2)*\
+(atp^2/kpfkatp)^shift(pow0,4*[j]+3)/\
+famp^(shift(pow0,4*[j])*shift(pow0,4*[j]+2))/\
+fmt^(shift(pow0,4*[j])*shift(pow0,4*[j]+3))/\
+ffbp^(shift(pow0,4*[j]+1)*shift(pow0,4*[j]+2))/\
+fbt^(shift(pow0,4*[j]+1)*shift(pow0,4*[j]+3))/\
+fatp^(shift(pow0,4*[j]+2)*shift(pow0,4*[j]+3))
+jpfk=vpfk*((1-kpfkbas)*w14 + \
+kpfkbas*(w2+w3+w6+w7+w10+w11+w14+w15)) \
+/ (sum(0,15)of(shift(w0,i')))
+
+## lower glycolysis (lg)
+p klg=.3
+
+## pyruvate dehydrogenase (PDH)
+p vpdh=.00104
+jpdh=vpdh*sqrt(fbp)
+
+#######################
+# Adenine nucleotides #
+#######################
+p atot=3000.
+amp=adp^2/atp
+adp=.5*(sqrt(atp*(4.*atot-3.*atp))-atp)
+
+
+#####################
+# Differential eqns #
+#####################
+
+f6p'=(1/(1+kgpi)*(jgk-jpfk))
+fbp'=1/(1+klg)*(jpfk-.5*jpdh)
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=20.0
+@ maxstor=9999999,bounds=10000000, bell=0
+@ xp=tmin, yp=fbp
+@ total=900000, xlo=0, xhi=20, ylo=0, yhi=50
+
+tmin=t/60000
+aux tmin=tmin
+aux jpfk=jpfk
+done
