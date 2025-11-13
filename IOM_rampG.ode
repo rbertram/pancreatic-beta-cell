@@ -1,0 +1,246 @@
+# IOM_rampG.ode
+# 
+# The IOM with glucose ramped up. From "Deconstructing the
+# Integrated Oscillator Model for Pancreatic Beta-Cells", by R. Bertram, 
+# I. Marinelli, P. A. Fletcher, L. S. Satin, and A. S. Sherman, 
+# Mathematical Biosciences, 365:109085, 2023.
+#
+
+# Set g_bas=10 to make the figure with constant glucose.
+# Has the simplified code for PFK.
+# 
+
+##################################
+# for a smooth ramp (first half of double-exponential pulse):
+##################################
+
+# Set g_bas=10 to make the figure with constant glucose.
+par g_bas=3
+par g_max=10
+par tau=900000
+par tpulse=1200000
+delpulse=t-tpulse
+pnorm=4*tau*tau*exp(-2)
+pulse=delpulse*delpulse/pnorm*exp(-delpulse/tau)*heav(delpulse)
+G=G_bas+(G_max-G_bas)*pulse
+aux G=G
+
+##################################
+##        Metabolic Model       ##
+##################################
+
+# Glucokinase reaction rate 
+par vgk=0.008
+par kgk=14
+num ngk=1.7
+Jgk=vgk*G^ngk/(G^ngk+kgk^ngk)
+
+# PFK reaction rate, Jpfk
+par k1=30
+par k2=1
+par k3=50000
+par k4=1000
+par famp=0.02
+par fatp=20
+par ffbp=0.2
+par fbt=20
+par fmt=20
+
+# Phosphofructokinase rate
+par kpfkbas=0.06
+par vpfk=0.01
+
+ampk1 = amp/k1
+
+fbpk2 = fbp/k2
+
+f6p2k3 = f6p^2/k3
+
+atp2k4 = atp^2/k4
+
+wmax = ampk1*fbpk2*f6p2k3/(famp*ffbp)
+
+wf6p = f6p2k3*(1 + atp2k4/fatp + fbpk2/ffbp + fbpk2/fbt*atp2k4/(ffbp*fatp) + ampk1/famp + ampk1/fmt*atp2k4/(famp*fatp) + ampk1/fmt*fbpk2/fbt*atp2k4/(famp*ffbp*fatp))
+
+wnof6p = 1 + atp2k4 + fbpk2 + fbpk2/fbt*atp2k4 + ampk1 + ampk1/fmt*atp2k4 + ampk1*fbpk2 + ampk1/fmt*fbpk2/fbt*atp2k4
+
+Jpfk= vpfk*(wmax + kpfkbas*wf6p)/( wmax + wf6p + wnof6p)
+
+
+##########
+# Gapdh rate, Jgapdh
+Jgapdh = sqrt(fbp)
+
+##########
+# PDH reaction rate, Jpdh
+par vpdh=0.0075
+
+par kcapdh=200
+par kcam=200
+cam = kcam * c
+sinfty = cam/(cam + kCaPDH)
+aux cam = cam
+
+Jpdh = vpdh*sinfty*Jgapdh
+
+#####################################
+## ATP dynamics 
+#####################################
+
+#######
+# basal and glucose-stimulated ADP phosphorylation rate
+par vg=2.1
+par kg=0.05
+y = vg*(Jpdh/(kg+Jpdh))
+
+# Calcium inhibition of ATP production (Keizer-Magnus effect)
+par kkm=0
+cainh=1-kkm*c
+
+par r=1
+vphos = exp( (r + y) * cainh)
+Jprod = vphos*adp
+
+#units: ms-1
+aux vphos = vphos
+
+#######
+# ATP hydrolysis - units? uM ADP / uM ATP / ms
+par vhyd=10
+par vhydbas=1
+vhydtot=vhydbas + vhyd*(Jpmca + Jserca/2)
+Jhyd = vhydtot*atp
+
+aux vhydtot = vhydtot
+
+######################################
+## Adenosine phosphorylation states  # 
+######################################
+# assuming 2 conservation laws eliminates two variables:
+# 1. atot=atp+adp+amp (adenosine is neither created nor destroyed, just changes phosphorylation states)
+# 2. amp=adp^2/atp ( rapid equilibrium of the Adenylate kinase (myokinase) reaction: atp+amp <=> 2adp )
+
+par atot=3000
+atp = 0.5*(atot-adp + sqrt(adp*atot)*sqrt(-2+atot/adp-3*adp/atot))
+amp = adp^2/atp
+ratio = atp/adp
+
+aux atp=atp
+aux ratio=ratio
+#aux perceval= ratio / (ratio + 3.5)
+
+##################################
+## Ionic currents               ##
+##################################
+
+num vca=25
+#num vk=-75
+par ko=5
+par ki=100
+num Rconst=8.3143, Temp=293.15, Fara=96.4867
+vk = Rconst*Temp/Fara*log(ko/ki)
+aux vk = vk
+
+
+########
+# ICa
+par gca=1000
+num vm=-20, sm=12
+minf = 1/(1+exp((vm-v)/sm))
+ica = gca*minf*(v-vca)
+
+########
+# Ik
+par gk=2700
+num vn=-16, sn=5
+par taun=20
+ninf = 1/(1+exp((vn-v)/sn))
+ik = gk*n*(v-vk)
+
+########
+# Ikca
+par gkca=250
+par kd=0.3
+num nkca=4
+qinf = c^nkca/(kd^nkca+c^nkca)
+ikca = gkca*qinf*(v-vk)
+
+########
+#Ikatp
+# - diazoxide using increased ktt
+par gkatpbar=27000
+par ktt=1
+num kdd=17, ktd=26
+mgadp = 0.165*adp
+adp3m = 0.135*adp
+atp4m = 0.05*atp
+topo = 0.08*(1+2*mgadp/kdd) + 0.89*(mgadp/kdd)^2
+bottomo = (1+mgadp/kdd)^2 * (1+adp3m/ktd+atp4m/ktt)
+katpo = topo/bottomo 
+ikatp = gkatpbar*katpo*(v-vk)
+
+############################
+#       Ca2+ fluxes	       #
+############################
+# Ca2+ fluxes across the plasma membrane
+num alpha=4.5e-6
+Jin = -alpha*ica
+
+# PMCA - Hill version
+par vpmca=0.045
+par kpmca=0.1
+jpmca = vpmca*c^2/(c^2+kpmca^2)
+
+# SERCA - Hill version
+par vserca=0.2
+par kserca=0.2
+Jserca=vserca*c^2/(c^2+kserca^2)
+
+# Ca2+ efflux through leak
+par pleak=0.00025
+Jleak = pleak*(cer-c) 
+
+Jmem = Jin - Jpmca
+Jer = Jserca - Jleak
+
+############################
+#       Vector field	   #
+############################
+par taua=250000
+num fca=0.01
+par sigmaer=14
+num Cm=5300
+
+v' = -(ica + ik + ikca + ikatp )/Cm
+n' = (ninf-n)/taun
+cer' = fca*sigmaer*Jer
+c' = fca*(Jmem - Jer)
+adp'= (Jhyd-Jprod)/taua
+f6p'= 0.3*(Jgk-Jpfk)
+fbp'= Jpfk-0.5*Jpdh
+
+# Initial conditions
+init v=-65.3618 
+init n=0
+init cer=47.5426
+init c=0.0502
+init adp=791.5917
+init f6p=39.3747
+init fbp=0.0131
+
+aux tmin=t/60000
+
+############################################
+#         XPP: numerical details	   #
+############################################
+
+@ meth=5dp, toler=1.0e-5, atoler=1.0e-6, dt=20, dtmax=1000, total=3000000
+@ maxstor=10000000,bounds=100000000, xp=tmin, yp=c
+@ xlo=0, xhi=50, ylo=0, yhi=0.3
+
+@ autovar=c, AUTOXMIN=1, AUTOXMAX=11, AUTOYMIN=0, AUTOYMAX=0.25
+@ ntst=150,nmax=4000,npr=4000
+@ ds=0.001,dsmin=1e-7,dsmax=1,parmin=1e-5,parmax=25
+@ epsu=1e-6, epsl=1e-6, epss=1e-4, normmax=1e6
+
+done
