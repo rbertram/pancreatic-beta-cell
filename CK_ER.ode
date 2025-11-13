@@ -1,0 +1,76 @@
+# CK_ER.ode
+#
+# A 3D version of the Chay-Keizer model, with a variable added for calcium
+# concentration in the endoplasmic reticulum. From Deconstructing the
+# Integrated Oscillator Model for Pancreatic Beta-Cells", by R. Bertram,
+# I. Marinelli, P. A. Fletcher, L. S. Satin, and A. S. Sherman,
+# Mathematical Biosciences, 365:109085, 2023.
+
+v(0)=-60
+n(0)=0
+c(0)=0.1
+cer(0)=95
+
+# Conductances in pS; currents in fA; Ca concentrations in uM; time in ms
+
+# conductances
+par gkatp=230, gkca=800
+
+# Ca parameters  (sigmav=cyt volume/ER volume)
+par sigmav=5, kpmca=0.2
+
+# AUTO parameters
+par autoc=1, cknot=0.1, autocer=1, cerknot=50
+
+# Invisible parameters
+# Ik
+number vn=-16, vk=-75, gk=3000, taun=16
+par sn=5
+# Ica
+number vca=25, gca=1200
+number vm=-20, sm=12
+# Ikca
+par nh=5, kd=0.3
+# Miscellaneous
+number cm=5300
+# Calcium Handling
+par f=0.01
+number fer=0.01
+number alpha=4.50e-6
+# Calcium Handling: ER
+par perl=0.0005, kserca=0.4
+
+# Functions
+
+ninf = 1/(1+exp((vn-v)/sn))
+minf = 1/(1+exp((vm-v)/sm))
+omega = 1/(1+(kd/c)^nh)
+ica = gca*minf*(v-vca)
+ikca = gkca*omega*(v-vk)
+ikatp = gkatp*(v-vk)
+ik = gk*n*(v-vk)
+
+% ER functions
+jerp = kserca*c
+
+% Ca fluxes
+jmemtot = -(alpha*ica + kpmca*c)
+jerleak = perl*(cer - c)
+jertot = jerleak  - jerp
+
+# Equations
+
+v' = -(ica + ik + ikatp + ikca)/cm
+n' =  (ninf - n)/taun
+c' = autoc*f*(jertot + jmemtot) + (1-autoc)*(cknot-c)
+cer' = autocer*(-fer*sigmav*jertot) + (1-autocer)*(cerknot-cer)
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=5.0, total=150000, 
+@ maxstor=20000,bounds=10000000, xp=tsec, yp=v
+@ xlo=0, xhi=150, ylo=-70, yhi=-10, bell=0
+
+aux tsec=t/1000
+aux tmin=t/60000
+aux w=omega
+
+done
