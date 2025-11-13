@@ -1,0 +1,115 @@
+# phantom2.ode
+#
+# The more biological phantom bursting model from Bertram and Sherman, Bulletin of Mathematical 
+# Biology, 66:1313-1344, 2004.
+
+v(0)=-60
+n(0)=0
+c(0)=0.1
+a(0)=0.46
+cer(0)=95
+
+# Persistence of slow bursting in tolbutamide and Tg
+# gkatpbar=300, gkca=100, r=0.04, kserca=0
+
+# Conductances in pS; currents in fA; Ca concentrations in uM; time in ms
+
+# conductances
+par gkatpbar=500
+# Ikca (800 = fast , 700 = medium, 100 = slow)
+par gkca=700
+# ADP parameters (no glucose, r=0, kserca=0.05
+                  low glucose, r=0.04, kserca=0.1
+#                 med. glucose, r=0.14, kserca=0.4)
+par r=0.14, kserca=0.4
+# Ca parameters  (sigmav=cyt volume/ER volume)
+par sigmav=5, kc=0.2
+par ip3=0
+# ACh current
+par gach=0, vach=0
+# AUTO parameters
+par autoc=1, cknot=0.1, autoa=1, aknot=.46, autocer=1, cerknot=50
+
+# Invisible parameters
+# Icrac
+par cerbar=80, gcracbar=0
+number gcracca=0
+# Ik
+number vn=-16, vk=-75, taun=20, gk=3000
+par sn=5
+# Ica
+number vca=25, gca=1200
+number vm=-20, sm=12
+# Ikca
+number nh=5, kd=0.3
+# Icrac
+number vcrac=0, vcracca=25
+number sloper=3
+# Miscellaneous
+number iapp=0, lambda=1.25
+number cm=5300
+# Calcium Handling
+par f=0.01
+number fer=0.01
+number alpha=4.50e-6
+# Calcium Handling: ER
+# number kserca=1,perl=0.003    modified from Mears
+par perl=0.0005
+number dact=0.35, dip3=0.5, dinh=0.4
+number sa=0.1
+par taua=300000
+
+# Functions
+
+ninf = 1/(1+exp((vn-v)/sn))
+minf = 1/(1+exp((vm-v)/sm))
+ainf = 1/(1+exp((r-c)/sa))
+omega = 1/(1+(kd/c)^nh)
+ica = gca*minf*(v-vca)
+ikca = gkca*omega*(v-vk)
+ikatp = gkatpbar*a*(v-vk)
+cracact = 1/(1+exp((cer-cerbar)/sloper))
+icrac = gcracbar*cracact*(v-vcrac)
+icracca = gcracca*cracact*(v-vcracca)
+ik = gk*n*(v-vk)
+iach = gach*(v-vach)
+
+% ER functions
+ainf_ip3 = 1/(1 + dact/c)
+hinfer = 1/(1 + c/dinh)
+# jerp = verp*(c^2)/(c^2 + kerp^2)
+jerp = kserca*c
+binf = ip3/(ip3 + dip3)
+o = ainf_ip3^3*binf^3*hinfer^3
+
+% Ca fluxes
+jmemtot = -(alpha*(ica+icracca) + kc*c)
+# jmp = vmp*(c^2)/(c^2 + kmp^2)
+# jmemtot = -f*( alpha*(ica+icrac) + jmp )
+jerleak = perl*(cer - c)
+jerip3 = o*(cer - c)
+jertot = jerleak + jerip3 - jerp
+% remove ER
+% jertot = 0
+
+# Equations
+
+v' = (-ica - ik - ikatp  - ikca - icrac - iach + iapp)/cm
+n' =  lambda*(ninf - n)/taun
+c' = autoc*f*(jertot + jmemtot) + (1-autoc)*(cknot-c)
+a' = autoa*((ainf-a)/taua) + (1-autoa)*(aknot-a)
+cer' = autocer*(-fer*sigmav*jertot) + (1-autocer)*(cerknot-cer)
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=20.0, total=300000, 
+@ maxstor=20000,bounds=10000000, xp=tsec, yp=v
+@ xlo=0, xhi=300, ylo=-70, yhi=-10
+
+# aux itot=(ica + ik + ikatp  + ikca + icrac)/1000
+aux tsec=t/1000
+aux tmin=t/60000
+aux af=ainf
+aux w=omega
+# aux Icrac=icrac
+# aux Icracca=icracca
+
+done
