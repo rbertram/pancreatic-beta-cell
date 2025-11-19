@@ -1,0 +1,354 @@
+#
+# AJP_22.ode
+#
+# This XPPAUT ODE file uses the Integrated Oscillator Model (IOM) to implement
+# a negative feedback loop with a delay as a mechanism to synchronize islets. 
+
+# Used to make all model simulation figures in: 
+#    Coordination of Pancreatic Islet Rhythmic Activity by Delayed Negative Feedback,
+#    N. Bruce, I.-A. Wei, W. Leng, Y. Oh, Y.-C. Chiu, M.G. Roper, R. Bertram
+#    American Journal of Physiology, 323:E492-E502, 2022.
+
+# Variables:
+#    v -- voltage (mV)
+#    n -- activation of delayed rectifier
+#    c -- free cytosolic calcium concentration (muM)
+#    adp -- cytosolic ADP concentration (muM)
+#    cer -- concentration of free calcium in the endoplasmic reticulum (muM)
+#    cam -- mitocondrial calcium concentration (muM)
+#    f6p -- fructose 6-phosphate concentration (muM)
+#    fbp -- fructose 1,6-bisphosphate concentration (muM)
+#    I -- insulin, arbitrary units
+#    Gi -- intracellular glucose (mM)
+#    Ge -- extracellular glucose (mM)
+
+# Units:
+# time: ms
+# volume: l
+# conductance: pS
+# V: mV
+# I: fA
+# J: muM/ms (mM/ms for Jgk and Jglut)
+# alpha: mumol/fA/ms
+
+# Parameter taud (ms) changes the time delay
+
+###------------INITIAL CONDITIONS--------------###
+
+%[1..5]
+v[j](0)=-60
+n[j](0)=0
+c[j](0)=0.1
+cer[j](0)=185
+cam[j](0)=100
+adp[j](0)=780
+f6p[j](0)=60
+fbp[j](0)=40
+I[j](0)=0.4
+Gi[j](0)=10
+%
+Ge(0)=10
+
+# Insulin history function for implementing delay
+init I[1..5]=0.4
+
+# Randomizes initial conditions
+global 0 t {adp[1..5]=ran(60)+780;f6p[j]=ran(30)+50;v[j]=ran(35)-60;cer[j]=ran(200)+150;I[j]=ran(50);c[j]=ran(0.18);fbp[j]=ran(25)}
+
+###------------PARAMETERS--------------###
+
+##################################
+## Electrical and Calcium Model ##
+##################################
+
+
+# Ca2+ current, ica
+num gca = 1000, vca = 25
+num vm=-20, sm=12
+
+
+# Delayed-rectifying K+ current, ik
+num gk=2700, vk=-75
+num taun=20
+num nin=-16, sn=5
+
+
+#  Ca2+-activated K+ current, ikca
+num kd=0.5
+par gkca=50
+
+
+# K-ATP channel current, ikatp
+num kdd=17, ktd=26, ktt=1
+num atot=3000
+par gkatpbar=27500
+
+
+# Ca2+ fluxes across the plasma membrane
+num alpha=5.18E-18, vcyt=1.15E-12, kpmca=0.2
+
+
+# Ca2+ fluxes into ER
+num kserca=0.4, pleak=2.0E-4
+
+
+# Ca2+ fluxes into the mitochondria
+num kuni=0.4, knaca=0.001
+
+
+# The vector field (Electrical and Calcium Model)
+num Cm=5300	
+num fca=0.01	
+num sigmam=100
+num sigmaer=31
+
+
+##################################
+##        Metabolic Model       ##
+##################################
+
+
+# GLUT-2 reaction rate, Jglut
+par Vglut=8, Kglut=7
+
+# Glucokinase reaction rate, Jgk
+par Vgk1=0.0000015, Vgk2=0.0000018, Vgk3=0.0000025 Vgk4=0.0000029, Vgk5=0.0000027
+par Kgk=11, ngk=15
+
+
+# PFK reaction rate, Jpfk
+num k1=30, k2=1, k3=50000, k4=1000
+num famp=0.02, fatp=20, ffbp=0.2, fbt=20, fmt=20
+num kpfk =0.06, vpfk=0.01
+
+
+# PDH reaction rate, Jpdh
+num kCaPDH=200
+par vpdh=0.009
+
+
+# Insulin, I
+par taui=10000, ki=0.1, Islope=1000
+
+
+# The vector field (Metabolic Model)
+num taua= 300000
+
+
+# Used to convert units from mM to muM
+num convert=1000
+
+
+# Extracellular glucose, Ge
+par tauG=50000, Gmin=7, Gmax=13, Ihat=15, SG=1, dyng=1
+par glustart=1200000
+
+
+# Delay parameter
+par taud=0
+
+
+
+%[1..5]
+###------------FUNCTIONS--------------###
+
+##################################
+## Electrical and Calcium Model ##
+##################################
+
+
+# Ca2+ current, ica
+minf[j] = 1/(1+exp((vm-v[j])/sm))
+ica[j]=gca*minf[j]*(v[j]-vca)
+
+
+# Delayed-rectifying K+ current, ik
+ninf[j]=1/(1+exp((nin-v[j])/sn))
+ik[j]=gk*n[j]*(v[j]-vk)
+
+
+#  Ca2+-activated K+ current, ikca
+qinf[j]=c[j]^2/(kd^2+c[j]^2)
+ikca[j]=-gkca*qinf[j]*(vk-v[j]) 
+
+
+# K-ATP channel current, ikatp
+rad[j]=sqrt(-4*adp[j]^2+(atot-adp[j])^2)
+atp[j]=(atot+rad[j]-adp[j])/2
+mgadp[j]=0.165*adp[j]
+adp3m[j]=0.135*adp[j]
+atp4m[j]=0.05*atp[j]
+topo[j]=0.08+0.89*mgadp[j]^2/kdd^2+0.16*mgadp[j]/kdd 
+bottomo[j]=(1+mgadp[j]/kdd)^2*(1+atp4m[j]/ktt +adp3m[j]/ktd) 
+katpo[j]=topo[j]/bottomo[j]
+ikatp[j]=gkatpbar*katpo[j]*(v[j]-vk)
+
+
+# Ca2+ fluxes across the plasma membrane
+Jmem[j]=-(alpha/vcyt*ica[j] + kpmca*c[j])
+
+
+# Ca2+ fluxes into ER
+Jer[j]=kserca*c[j] - pleak*(cer[j]-c[j]) 
+
+
+# Ca2+ fluxes into the mitochondria
+Jm[j]= kuni*c[j] - knaca*(cam[j]-c[j]) 
+
+
+##################################
+##        Metabolic Model       ##
+##################################
+
+
+# GLUT-2 reaction rate, Jglut
+Jglut[j]=Vglut*((Ge-Gi[j])*Kglut)/((Kglut+Ge)*(Kglut+Gi[j]))
+
+
+# Glucokinase reaction rate, Jgk
+Jgk[j]=Vgk[j]*(Gi[j])^ngk/(Kgk^ngk+Gi[j]^ngk)
+
+
+# PFK reaction rate, Jpfk
+amp[j]=adp[j]^2/atp[j]
+
+# (alpha,beta,gamma,delta)
+# (0,0,0,0)
+weight1[j]=1
+topa1[j]=0
+bottom1[j]=1
+
+# (0,0,0,1)
+weight2[j]=atp[j]^2/k4
+topa2[j]=topa1[j]
+bottom2[j]=bottom1[j]+weight2[j]
+
+# (0,0,1,0)
+weight3[j]=f6p[j]^2/k3
+topa3[j]=topa2[j]+weight3[j]
+bottom3[j]=bottom2[j]+weight3[j]
+
+# (0,0,1,1)
+weight4[j]=(f6p[j]*atp[j])^2/(fatp*k3*k4)
+topa4[j]=topa3[j]+weight4[j]
+bottom4[j]=bottom3[j]+weight4[j]
+
+# (0,1,0,0)
+weight5[j]=fbp[j]/k2
+topa5[j]=topa4[j]
+bottom5[j]=bottom4[j]+weight5[j]
+
+# (0,1,0,1)
+weight6[j]=(fbp[j]*atp[j]^2)/(k2*k4*fbt)
+topa6[j]=topa5[j]
+bottom6[j]=bottom5[j]+weight6[j]
+
+# (0,1,1,0)
+weight7[j]=(fbp[j]*f6p[j]^2)/(k2*k3*ffbp)
+topa7[j]=topa6[j]+weight7[j]
+bottom7[j]=bottom6[j]+weight7[j]
+
+# (0,1,1,1)
+weight8[j]=(fbp[j]*f6p[j]^2*atp[j]^2)/(k2*k3*k4*ffbp*fbt*fatp)
+topa8[j]=topa7[j]+weight8[j]
+bottom8[j]=bottom7[j]+weight8[j]
+
+# (1,0,0,0)
+weight9[j]=amp[j]/k1
+topa9[j]=topa8[j]
+bottom9[j]=bottom8[j]+weight9[j]
+
+# (1,0,0,1)
+weight10[j]=(amp[j]*atp[j]^2)/(k1*k4*fmt)
+topa10[j]=topa9[j]
+bottom10[j]=bottom9[j]+weight10[j]
+
+# (1,0,1,0)
+weight11[j]=(amp[j]*f6p[j]^2)/(k1*k3*famp)
+topa11[j]=topa10[j]+weight11[j]
+bottom11[j]=bottom10[j]+weight11[j]
+
+# (1,0,1,1)
+weight12[j]=(amp[j]*f6p[j]^2*atp[j]^2)/(k1*k3*k4*famp*fmt*fatp)
+topa12[j]=topa11[j]+weight12[j]
+bottom12[j]=bottom11[j]+weight12[j]
+
+# (1,1,0,0)
+weight13[j]=(amp[j]*fbp[j])/(k1*k2)
+topa13[j]=topa12[j]
+bottom13[j]=bottom12[j]+weight13[j]
+
+# (1,1,0,1)
+weight14[j]=(amp[j]*fbp[j]*atp[j]^2)/(k1*k2*k4*fbt*fmt)
+topa14[j]=topa13[j]
+bottom14[j]=bottom13[j]+weight14[j]
+
+# (1,1,1,0) -- the most active state of the enzyme
+weight15[j]=(amp[j]*fbp[j]*f6p[j]^2)/(k1*k2*k3*ffbp*famp)
+topa15[j]=topa14[j]
+topb[j]=weight15[j]
+bottom15[j]=bottom14[j]+weight15[j]
+
+# (1,1,1,1)
+weight16[j]=(amp[j]*fbp[j]*f6p[j]^2*atp[j]^2)/(k1*k2*k3*k4*ffbp*famp*fbt*fmt*fatp)
+topa16[j]=topa15[j]+weight16[j]
+bottom16[j]=bottom15[j]+weight16[j]
+
+Jpfk[j]= vpfk*(topb[j] + kpfk*topa16[j])/bottom16[j]
+
+
+# PDH reaction rate, Jpdh
+sinfty[j]= cam[j]/(cam[j]+kCaPDH)
+Jpdh[j]=vpdh*sinfty[j]*sqrt(fbp[j])
+
+
+# Insulin equilibrium, Iinf
+Iinf[j]=heav(c[j]-ki)*Islope*(c[j]-ki)
+
+
+###------------Differential Equations--------------###
+
+v[j]'=-(ica[j] + ik[j] + ikca[j] + ikatp[j])/Cm
+n[j]'=-(n[j]-ninf[j])/taun
+c[j]'= fca*(Jmem[j] - Jm[j] - Jer[j])
+cer[j]'=fca*sigmaer*Jer[j]
+cam[j]'=fca*sigmam*Jm[j]
+Gi[j]'=Jglut[j]-Jgk[j]
+adp[j]'=(atp[j]-exp((1+2.2*Jpdh[j]/(Jpdh[j]+0.05))*(1-c[j]/0.35))*adp[j])/taua
+f6p[j]'=0.3*(convert*Jgk[j]-Jpfk[j])
+fbp[j]'=(Jpfk[j]-Jpdh[j]/2)
+I[j]'= (Iinf[j]-I[j])/taui
+
+%
+
+
+# Glucose equilibrium function, Ginf
+Ginf = Gmin+(Gmax-Gmin)/(1+exp((Idelay-Ihat)/SG))
+
+
+# Extracellular glucose differential equation
+Ge'=heav(t-glustart)*dyng*(Ginf-Ge)/tauG
+aux Ge=Ge
+
+
+# Averages and delay implementation
+Iavg=(I1+I2+I3+I4+I5)/5
+Idelay=(delay(I1,taud)+delay(I2,taud)+delay(I3,taud)+delay(I4,taud)+delay(I5,taud))/5
+cavg=(c1+c2+c3+c4+c5)/5
+aux Iavg=Iavg
+aux cavg=cavg
+aux Idelay=Idelay
+
+
+############################################
+#         XPP: numerical details	   #
+############################################
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=20, total=4800000
+@ maxstor=40000000,bounds=10000000, xp=tmin, yp=cavg
+@ delay=900000
+@ xlo=0, xhi=80, ylo=0.04, yhi=0.18
+
+aux tmin=t/60000
+
+done
