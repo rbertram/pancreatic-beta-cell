@@ -1,0 +1,379 @@
+# Physiology_22.ode
+
+# This ODE file defines a version of the Integrated Oscillator Model 
+# used to simulate insulin secretion during a pulse of glucose 
+# 
+# Used to generate Figure 4 in: 
+# Pulsatile Basal Insulin Secretion is Driven by Glycolytic Oscillations
+# P. A. Fletcher, I. Marinelli, R. Bertram, L. S. Satin, A. S. Sherman
+# Physiology, 37. https://doi.org/10.1152/physiol.00044.2021 
+#
+# Based on JTB_18a.ode, adding the Chen et al. 2008 secretion model
+# - uses ATP hydrolysis and/or Keizer-Magnus effect as calcium negative feedback onto metabolism [here, only hydrolysis]
+# - Calcium-dependent hydrolysis is linked to SERCA and PMCA pump rates
+# - Hill versions of SERCA and PMCA calcium pumps
+# - more realistic KCa channel (Hill coefficient of n=4). This reduces sensitivity to gKCa, allowing for more realistic conductance values
+# - removed the Michaelis-Menten function of Jpdh in the ADP phosphorylation rate equation: it was only rescaling Jpdh to be similar to r.
+# -- Instead, Jpdh is linearly rescaled
+# - Secretion model unchanged except parameters: 
+# -- bas_r3, r20 increased to give more basal secretion; vmd (microdomain volume) increased slightly to increase dynamic range of calcium effect
+# -- amplification factor for vesicle resupply (r3) is a slow equation tracking FBP for simplicity (ideally should mimic NADPH)
+#
+# First, run the simulation to reach a steady state (at basal glucose)
+# Then, set tpulse to the time (in ms) of desired pulse time
+
+# Has the simplified code for PFK.
+
+##################################
+### glucose pulse
+# double-exponential function of time, peaking at time t=tau/2 + tpulse
+
+par G_bas=3
+par G_max=10
+
+par tau=900000
+par tpulse=1800000
+delpulse=t-tpulse
+pnorm=4*tau*tau*exp(-2)
+pulse=delpulse*delpulse/pnorm*exp(-delpulse/tau)*heav(delpulse)
+
+G=G_bas+(G_max-G_bas)*pulse
+aux G=G
+
+##################################
+##        Metabolic Model       ##
+##################################
+
+# Glucokinase reaction rate 
+#par G=8.0
+par vgk=0.0070
+par kgk=8.0
+num ngk=1.7
+Jgk=vgk*G^ngk/(G^ngk+kgk^ngk)
+
+# PFK reaction rate, Jpfk
+#  Parameters
+#  k1--Kd for AMP binding
+#  k2--Kd for FBP binding
+#  k3--Kd for F6P binding
+#  k4--Kd for ATP binding
+# famp = f13
+# fatp = f41
+# ffbp = f23
+# fbt = f42
+# fmt = f43
+
+par k1=30.0
+par k2=1.0
+par k3=50000
+par k4=1000.0
+par famp=0.0200
+par fatp=20.0
+par ffbp=0.2
+par fbt=20.0
+par fmt=20.0
+
+# Phosphofructokinase rate
+par kpfkbas=0.040
+par vpfk=0.00750
+ampk1 = amp/k1
+
+fbpk2 = fbp/k2
+
+f6p2k3 = f6p^2/k3
+
+atp2k4 = atp^2/k4
+
+wmax = ampk1*fbpk2*f6p2k3/(famp*ffbp)
+
+wf6p = f6p2k3*(1 + atp2k4/fatp + fbpk2/ffbp + fbpk2/fbt*atp2k4/(ffbp*fatp) + ampk1/famp + ampk1/fmt*atp2k4/(famp*fatp) + ampk1/fmt*fbpk2/fbt*atp2k4/(famp*ffbp*fatp))
+
+wnof6p = 1 + atp2k4 + fbpk2 + fbpk2/fbt*atp2k4 + ampk1 + ampk1/fmt*atp2k4 + ampk1*fbpk2 + ampk1/fmt*fbpk2/fbt*atp2k4
+
+Jpfk= vpfk*(wmax + kpfkbas*wf6p)/( wmax + wf6p + wnof6p)
+
+##########
+# downstream glycolysis and mitochondrial PDH
+
+# Gapdh rate, Jgapdh
+Jgapdh = sqrt(fbp)
+
+# PDH reaction rate, Jpdh
+par vpdh=0.01250
+par kCaPDH=200.0
+sinfty = cam/(cam + kCaPDH)
+Jpdh = vpdh*sinfty*Jgapdh
+
+#####################################
+## ATP dynamics 
+#####################################
+
+#######
+# basal and glucose-stimulated ADP phosphorylation rate
+#par vg=2.200
+#par kg=0.0500
+#y = vg*(Jpdh/(kg+Jpdh))
+
+#no need for this nonlinearity: just boost JPDH to r's scale.
+par ky = 25.0
+y = ky*Jpdh
+
+# Calcium inhibition of ATP production (Keizer-Magnus effect)
+par kkm=0.0
+cainh=1-kkm*c
+
+par r=0.750
+vphos = exp( (r + y) * cainh )
+Jprod = vphos*adp
+
+#######
+# ATP hydrolysis
+par vhyd=5.000
+par vhydbas=1
+vhydtot=vhydbas + vhyd*(Jpmca + Jserca/2)
+Jhyd = vhydtot*atp
+
+######################################
+## Adenosine phosphorylation states  # 
+######################################
+# assuming 2 conservation laws eliminates two variables:
+# 1. atot=atp+adp+amp (adenosine is neither created nor destroyed, just changes phosphorylation states)
+# 2. amp=adp^2/atp ( rapid equilibrium of the Adenylate kinase (myokinase) reaction: atp+amp <=> 2adp )
+
+par atot = 3000
+atp = 0.5*(atot-adp + sqrt(adp*atot)*sqrt(-2+atot/adp-3*adp/atot))
+amp = adp^2/atp
+
+ratio = atp/adp
+
+##################################
+## Ionic currents               ##
+##################################
+
+num vca=25
+
+par ko = 5.0
+vk = 23.5370*log(ko/120)
+
+########
+# ICa
+par gca=1000
+num vm=-20, sm=12
+minf = 1/(1+exp((vm-v)/sm))
+ica = gca*minf*(v-vca)
+
+########
+# Ik
+par gk=2700.000
+num vn=-16, sn=5, taun=20
+ninf = 1/(1+exp((vn-v)/sn))
+ik = gk*n*(v-vk)
+
+########
+# Ikca
+par gkca=500
+par kd=0.5
+par nkca=4
+qinf = c^nkca/(kd^nkca+c^nkca)
+ikca = gkca*qinf*(v-vk)
+
+########
+#Ikatp
+# - diazoxide using increased ktt
+par gkatpbar=26000.00
+par ktt=1.00
+num kdd=17, ktd=26
+mgadp = 0.165*adp
+adp3m = 0.135*adp
+atp4m = 0.05*atp
+topo = 0.08*(1+2*mgadp/kdd) + 0.89*(mgadp/kdd)^2
+bottomo = (1+mgadp/kdd)^2 * (1+adp3m/ktd+atp4m/ktt)
+katpo = topo/bottomo 
+ikatp = gkatpbar*katpo*(v-vk)
+
+############################
+#       Ca2+ fluxes	   #
+############################
+# Ca2+ fluxes across the plasma membrane
+num alpha=4.5e-6
+Jin = -alpha*ica
+
+# Ca2+ pumps - Hill version
+par nupmca=0.04
+par kpmca=0.1
+jpmca = nupmca*c^2/(c^2+kpmca^2)
+par nuserca=0.35
+par kserca=0.2
+Jserca=nuserca*c^2/(c^2+kserca^2)
+
+par pleak=0.00020
+Jleak = pleak*(cer-c) 
+
+Jmem = Jin - Jpmca
+Jer = Jserca - Jleak
+
+# Ca2+ fluxes across mitochondrial membrane
+#par kuni=0.40
+#par knaca=0.0010
+#Jmito = kuni*c - knaca*(cam - c)
+#cam=(kuni+knaca)/knaca * c
+
+par kcam = 400.00
+cam = kcam * c
+
+#calcium microdomain for exocytosis with diffusive coupling of microdomain to cytosol
+par vmd=0.0055
+JL = Jin/vmd
+par B=10
+Jdiff=B*(cmd-c)
+
+#steady state microdomain calcium (like krasi's BK)
+#cmd' = fca*(JL-Jdiff) 
+# 0 = JL - Jdiff = -Jin/vmd - B*(cmd - c) => cmd = (Jin/vmd + B*c)/B = Jin/(vmd*B)+c. 
+#par fmd = 14.0
+#cmd = c + Jin*fmd
+#aux cmd = cmd
+
+############################
+#       Vector field	   #
+############################
+par taua=300000
+num fca=0.01
+num sigmaer=31
+num Cm=5300
+
+v' = -(ica + ik + ikca + ikatp)/Cm
+n' = (ninf-n)/taun
+cer' = fca*sigmaer*Jer
+c' = fca*(Jmem - Jer)
+cmd' = fca*(JL-Jdiff) 
+adp' =(Jhyd-Jprod)/taua
+f6p'=0.3*(Jgk-Jpfk)
+fbp'=(Jpfk-0.5*Jpdh)
+
+# Initial conditions
+v(0)=-60.0
+n(0)=0
+c(0)=0.1
+cer(0)=185.0
+adp(0)=780.0
+f6p(0)=60.0
+fbp(0)=40.0
+
+aux amp=amp
+aux atp=atp
+aux ratio=ratio
+#aux perceval = ratio/(3.5+ratio)
+
+############################
+#       Secretion	   #
+############################
+
+###
+# Vesicles:
+# state 6 consists of vesicles (docked) but not yet primed for fusion
+# state 5 is the primed vesicles outside the microdomain
+# state 1 is the primed vesicles bound to the microdomain
+# state 4 is the prefusion state
+# F represents the fused state
+# R represents the insulin releasable state.
+
+### Amplifying factor
+# slow equation tracking FBP for simplicity
+par kaf=10
+afprod = Jgapdh/(Jgapdh+kaf)
+
+par tauaf=50000
+af(0)=0
+af'=(afprod - af)/tauaf
+
+#amplification of r3
+par vaf=8
+r3af=(1+vaf*af)
+aux r3af=r3af
+
+#Kp vs c gives c's contribution to r3, r2
+par Kp=2.3
+par bas_r3=0.075
+par r30=1.205
+r3 = bas_r3 + r30*c/(c + Kp) * r3af
+
+par r20=0.015
+r2 = r20*c/(c + Kp)
+
+#### Define exocytosis
+# Chen et al. rates are in seconds, multiply ODE RHS's by ts to get ms
+num ts=0.001
+num kp1=20
+num km1=100
+num r1=0.6
+num rm1=1
+num rm2=0.001
+num rm3=0.0001
+num u1=2000
+num u2=3
+num u3=0.02
+
+#full equations
+N6(0)=218.017777
+N5(0)=24.539936
+N1(0)=14.71376
+N2(0)=0.612519
+N3(0)=0.0084499
+N4(0)=5.098857e-6
+NF(0)=0.003399
+NR(0)=0.50988575
+
+N6' = ts*(r3 + rm2*N5 - (rm3 + r2)*N6)
+N5' = ts*(rm1*N1 - (r1 + rm2)*N5 + r2*N6)
+N1' = ts*(-(3*kp1*cmd + rm1)*N1 + km1*N2 + r1*N5)
+N2' = ts*(3*kp1*cmd*N1 -(2*kp1*cmd + km1)*N2 + 2*km1*N3)
+N3' = ts*(2*kp1*cmd*N2 -(kp1*cmd + 2*km1)*N3 + 3*km1*N4)
+N4' = ts*(kp1*cmd*N3 - (3*km1 + u1)*N4)
+NF' = ts*(u1*N4 - u2*NF)
+NR' = ts*(u2*NF - u3*NR)
+
+# Rapid equilibrium expressions can be used instead if the simulation is too slow...
+# from pathway model: rapid equilibrium expressions
+#N1_C=km1/(3*kp1*cmd + rm1)
+#N1_D=r1/(3*kp1*cmd + rm1)
+#N2_E=3*kp1*cmd/(2*kp1*cmd + km1)
+#N2_F=2*km1/(2*kp1*cmd + km1)
+#N3_L=2*kp1*cmd/(2*km1+kp1*cmd)
+#N3_N=3*km1/(2*km1+kp1*cmd)
+
+## fast-slow analysis by considering N6 and N5 slow and all other fast.
+#CN4=(kp1*cmd/(3*km1 +u1))
+#CN3=N3_L/(1-N3_N*CN4)
+#CN2=N2_E/(1-N2_F*CN3)
+#CN1=N1_D/(1-N1_C*CN2)
+
+#N1=CN1*N5
+#N2=CN2*N1
+#N3=CN3*N2
+#N4=CN4*N3
+#NF=u1*N4/u2
+#NR=(u2/u3)*NF
+
+#aux n1=n1
+#aux n2=n2
+#aux n3=n3
+#aux n4=n4
+#aux nf=nf
+#aux nr=nr
+
+aux docked = n6 + n5 + n1
+aux primed = n5 + n1
+aux ISR=60*9*(u3*NR)
+aux R3=r3
+aux R2=r2
+
+############################################
+#         XPP: numerical details	   #
+############################################
+
+@ meth=cvode, toler=1.0e-9, atoler=1.0e-12, dt=20.0, total=1800000
+@ maxstor=200000,bounds=10000000, xp=t, yp=v
+@ xlo=0, xhi=1800000, ylo=-70, yhi=-10
+
+done
