@@ -1,0 +1,298 @@
+% BJ_22a.ode
+# IOM2.ode
+#
+% Computer code for the publication "Slow Oscillations Persist in Pancreatic 
+% Beta Cells Lacking Phosphofructokinase M", by I. Marinelli, V. Parekh, 
+% P. Fletcher, B. Thompson, J. ren, X. Tang, T. L. Saunders, J. Ha, 
+% A. Sherman, R. Bertram, and L. S. Satin. Published in Biophysical
+% Journal, 121:692-704, 2022.
+% Has the simplified code for PFK.
+
+% Variables:
+%    v -- cellular membrane potential (mV)
+%    n -- activation of delayed rectifier
+%    c -- free cytosolic calcium concentration (muM)
+%    adp -- cytosolic ADP concentration (muM)
+%    cer -- concentration of free calcium in the endoplasmic reticulum (muM)
+%    cam -- mitocondrial calcium concentration (muM)
+%    f6p -- fructose 6-phosphate concentration (muM)
+%    fbp -- fructose 1,6-bisphosphate concentration (muM)
+%    adpm -- mitocondrial ADP concentration (muM)
+%    nadhm -- mitocondrial NADH concentration (muM)
+%    psim -- mitocondrial membrane potential (mV)
+
+
+# Units:
+# time: ms
+# volume: l
+# conductance: pS
+# V: mV
+# I: fA
+# J: muM/ms
+# alpha: mumol/fA/ms
+
+
+
+# Initial conditions
+
+v(0)=-45
+n(0)=0
+c(0)=0.1
+cer(0)=320
+cam(0)=1
+adp(0)=970
+f6p(0)=14
+fbp(0)=84
+adpm(0)=14200
+nadhm(0)=4150
+psim(0)=170
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Electrical and Calcium Model %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Ca2+ current, ica
+num gca = 1000, vca = 25
+num nim = -20, sm = 12
+
+minf = 1/(1+exp((nim-v)/sm))
+ica=gca*minf*(v-vca)
+
+
+% Delayed-rectifying K+ current, ik
+num gk=2700, vk=-75,
+num taun=20, nin=-16, sn=5,
+
+ninf=1/(1+exp((nin-v)/sn))
+ik=gk*n*(v-vk)
+
+
+%  Ca2+-activated K+ current, ikca
+num kd=0.5
+par gkca=150
+
+qinf=c^2/(kd^2+c^2)
+ikca=-gkca*qinf*(vk-v)
+
+
+% K-atp channel current, ikatp
+num kdd=17, ktd=26, ktt=1
+num atot=3000
+num gkatpbar=19700
+
+rad=sqrt(-4*adp^2+(atot-adp)^2)
+atp=(atot+rad-adp)/2
+mgadp=0.165*adp
+adp3m=0.135*adp
+atp4m=0.05*atp
+topo=0.08+0.89*mgadp^2/kdd^2+0.16*mgadp/kdd
+bottomo=(1+mgadp/kdd)^2*(1+atp4m/ktt +adp3m/ktd)
+katpo=topo/bottomo
+
+ikatp=gkatpbar*katpo*(v-vk)
+
+
+% Ca2+ fluxes across the plasma membrane (L- and R-type)
+num alpha=5.18E-18, vcyt=1.15E-12, kpmca=0.2
+
+Jmem=-(alpha/vcyt*ica + kpmca*c)
+
+
+% Ca2+ fluxes into ER
+num kserca=0.4, pleak=2.0E-4
+
+Jer=kserca*c - pleak*(cer-c)
+
+
+# Uniporter [uM/ms]
+num p21=0.013, p22=1.6
+
+Juni=(p21*psim-p22)*c^2
+
+# Na/Ca exchanger [uM/ms]
+num p23=0.0015 p24=0.016
+
+JNaCa=p23*(cam-c)*exp(p24*psim)
+
+# Ca2+ fluxes into the mitochondria
+Jm=Juni-JNaCa
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%        Metabolic Model       %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Glucokinase reaction rate
+num Jgk=0.001
+
+
+% PFK reaction rate, Jpfk_m
+amp=adp^2/atp
+
+%  Parameters
+%  k1--Kd for AMP binding
+%  k2--Kd for FBP binding
+%  k3--Kd for F6P binding
+%  k4--Kd for atp binding
+
+num k1M=30, k2M=1, k3M=50000, k4M=1000
+num fampM=0.02, fatpM=20, ffbpM=0.2, fbtM=20, fmtM=20
+num kpfkbasM =0.06 
+par vpfkM=0.01
+
+ampk1M = amp/k1M
+
+fbpk2M = fbp/k2M
+
+f6p2k3M = f6p^2/k3M
+
+atp2k4M = atp^2/k4M
+
+wmaxM = ampk1M*fbpk2M*f6p2k3M/(fampM*ffbpM)
+
+wf6pM = f6p2k3M*(1 + atp2k4M/fatpM + fbpk2M/ffbpM + fbpk2M/fbtM*atp2k4M/(ffbpM*fatpM) + ampk1M/fampM + ampk1M/fmtM*atp2k4M/(fampM*fatpM) + ampk1M/fmtM*fbpk2M/fbtM*atp2k4M/(fampM*ffbpM*fatpM))
+
+wnof6pM = 1 + atp2k4M + fbpk2M + fbpk2M/fbtM*atp2k4M + ampk1M + ampk1M/fmtM*atp2k4M + ampk1M*fbpk2M + ampk1M/fmtM*fbpk2M/fbtM*atp2k4M
+
+Jpfk_m= vpfkM*(wmaxM + kpfkbasM*wf6pM)/(wmaxM + wf6pM + wnof6pM)
+
+% PFK reaction rate, Jpfk C
+num k1C=30, k2C=2, k3C=50000, k4C=100
+num fampC=0.02, fatpC=20, ffbpC=0.2, fbtC=20, fmtC=20
+num kpfkbasC =0.06 
+par vpfkC=0.01
+
+ampk1C = amp/k1C
+
+fbpk2C = fbp/k2C
+
+f6p2k3C = f6p^2/k3C
+
+atp2k4C = atp^2/k4C
+
+wmaxC = ampk1C*fbpk2C*f6p2k3C/(fampC*ffbpC)
+
+wf6pC = f6p2k3C*(1 + atp2k4C/fatpC + fbpk2C/ffbpC + fbpk2C/fbtC*atp2k4C/(ffbpC*fatpC) + ampk1C/fampC + ampk1C/fmtC*atp2k4C/(fampC*fatpC) + ampk1C/fmtC*fbpk2C/fbtC*atp2k4C/(fampC*ffbpC*fatpC))
+
+wnof6pC = 1 + atp2k4C + fbpk2C + fbpk2C/fbtC*atp2k4C + ampk1C + ampk1C/fmtC*atp2k4C + ampk1C*fbpk2C + ampk1C/fmtC*fbpk2C/fbtC*atp2k4C
+
+Jpfk_c= vpfkC*(wmaxC + kpfkbasC*wf6pC)/(wmaxC + wf6pC + wnof6pC)
+
+Jpfk=Jpfk_m+Jpfk_c
+
+
+% PDH reaction rate, Jgpdh
+num kCaPDH=1.5
+
+sinfty= cam/(cam+kCaPDH)
+
+Jgpdh=sinfty*sqrt(fbp)
+
+
+% Adenine nucleotide translocator, Jant
+num amtot=15000
+num p19=0.6, p20=2
+num FRT=.037
+
+atpm = amtot-adpm
+Jant = p19/(1+p20*adpm/atpm)*exp(FRT/2* psim)
+
+% Hydrolysis, Jhyd 
+num khyd=1.864e-06, khydbas=6.48e-7
+
+Jhyd = (khyd*c+khydbas)*atp
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%      Mitochondria Model      %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Phosphorylation. In uM/ms.
+num p13=10000,  p14=190,    p15=8.5, p16=4
+
+b2=(p16*p13)/(p13+atpm)
+JF1F0=b2/(1+exp((p14-psim)/p15))
+
+% Respiration (uM/ms)
+num p4=5.28, p5=250, p6=165, p7=5
+
+JO=p4*nadhm/(p5+nadhm)/(1+exp((psim-p6)/p7))
+
+
+% Pyruvate dehydrogenase (PDH) (uM/ms)
+num nadmtot=10000, KNADHmPDH =1.3 
+par vpdh=.4 
+
+nadm=nadmtot-nadhm
+
+Jpdh=vpdh*Jgpdh/(KNADHmPDH +nadhm/nadm)
+
+
+% Other dehydrogenase (DH) (uM/ms)
+num vdh=1.1, kCaDH=0.08, KNADHmDH =1.3
+
+Jdh = vdh*cam/(cam+kCaDH)/(KNADHmDH +nadhm/nadm)
+
+
+% H+ leakage through mitochondrial inner membrane (uM/ms)
+num p17=0.0014, p18=0.02
+
+JHleak=p17*psim-p18
+
+
+% Proton pumping due to respiration  (uM/ms)
+num p8=7.4, p9=100, p10=165, p11=5
+
+JHres=p8*nadhm/(p9+nadhm)/(1+exp((psim-p10)/p11))
+
+
+% Proton flux due to atpase (uM/ms)
+JHatp=3*JF1F0
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%      Vector fields	       %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% The vector field (Electrical and Calcium Model)
+num Cm=5300, fca=0.01, sigmam=290, sigmaer=31
+
+v'=-(ica + ik + ikca + ikatp)/Cm
+n'=-(n-ninf)/taun
+c'= fca*(Jmem -  Jm/sigmam - Jer)
+cer'=fca*sigmaer*Jer
+cam'=fca*Jm
+
+
+% The vector field (Metabolic Model)
+num Cmito=180 
+
+
+adp'= Jhyd - Jant/sigmam
+f6p'=0.3*(Jgk-Jpfk)
+fbp'=(Jpfk-Jpdh/2/sigmam)
+adpm'= Jant-JF1F0
+nadhm' = Jpdh+ Jdh -JO
+psim' = (JHres-JHatp-Jant-JHleak-JNaCa-2*Juni)/Cmito
+
+
+############################################
+#         XPP: numerical details	   #
+############################################
+
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=10,
+@ total=900000,  maxstor=20000,bounds=10000000
+@ xp=tmin, yp=v,xlo=0, xhi=15, ylo=-70, yhi=-10
+
+aux tmin=t/60000
+
+done
