@@ -1,0 +1,85 @@
+# JTP_04.ode
+#
+# This XPPAUT file contains the program for pancreatic beta-cells, published
+# by Wierschem and Bertram, J. Theor. Biol., 228:513-521, 2004.
+
+# Variables:
+#    v -- voltage
+#    n -- activation variable for a delayed rectifier
+#    c -- free cytosolic calcium concentration
+#    ATP -- cytosolic ATP concentration
+#    ADP -- cytosolic ADP concentration
+
+# Parameter values for different types of bursting
+# Accordian bursting: gatp=357, f=0.0013, nu=10, eta=188, tauc=1200
+# Bursting with deserts: gatp=350, f=0.001, nu=10, eta=185, tauc=1200
+# Bursting without deserts: gatp=350, f=0.00065, nu=10, eta=187.5, tauc=1200
+# Glycolytic bursting: gatp=150, f=0.0005, nu=250, eta=320, tauc=7000
+
+
+# Initial conditions
+v(0)=-66
+n(0)=0
+c(0)=0.17
+ATP(0)=2.4
+ADP(0)=0.05
+
+# Membrane parameters
+par gatp=357,gkca=300
+
+# Calcium parameters
+par f=0.0013
+num kc=0.1,alpha=2.25e-6
+
+# Invisible parameters
+number cm=5300,taun=16
+number gca=1200,gk=3000
+number vca=25,vk=-75
+number sm=12,sn=5.6,vm=-20,vn=-16
+number kd=0.3
+
+# assorted functions
+minf(v)=1/(1+exp((vm-v)/sm))
+ninf(v)=1/(1+exp((vn-v)/sn))
+omega(c)=1/(1+(kd/c))
+gkatp(ATP)=gatp/ATP
+
+# Ionic currents
+ica(v)=gca*minf(v)*(v-vca)
+ik(v,n)=gk*n*(v-vk)
+ikca(v,c)=gkca*omega(c)*(v-vk)
+ikatp(v,ATP)=gkatp(ATP)*(v-vk)
+
+# substrate (ATP) influx rate
+par nu=10
+
+# product (ADP) removal rate
+par eta=188
+
+# ratio k_2/k_(-2)
+number k=20
+
+# time scale parameter (in sec)
+par tauc=1200
+
+# Phosphofructokinase Function
+fun(ADP,ATP)=ATP*(1+k*ADP)^2
+Jmem(v,c)=-f*(alpha*ica(v)+kc*c)
+
+# Equations
+v'=-(ica(v)+ik(v,n)+ikca(v,c)+ikatp(v,ATP))/cm
+n'=(ninf(v)-n)/taun
+c'=Jmem(v,c)
+ATP'=(nu-fun(ADP,ATP))/(1000*tauc) 
+ADP'=(fun(ADP,ATP)-eta*ADP)/(1000*tauc)
+
+aux rat=ADP/ATP
+aux tsec=t/1000
+aux tmin=t/1000/60
+aux gview=gkatp(ATP)
+
+@ meth=cvode,toler=1.0e-10,atoler=1.0e-10,dt=20,total=600000
+@ maxstor=200000,bounds=10000000,xp=tmin,yp=v
+@ xlo=0,xhi=10,ylo=-80,yhi=0
+
+done
