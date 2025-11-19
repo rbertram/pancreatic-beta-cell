@@ -1,0 +1,133 @@
+# IOM_fastSS.ode
+
+# This computer program was used in the publication "Phantom
+# Bursting May Underlie Electrical Bursting in Single Pancreatic
+# beta-Cells", J. Theoret. Biol., 501:110346, 2020. Authors are
+# Mehran Fazli, Theodore Vo, and Richard Bertram.
+
+# This is the fast subsystem of the Integrated Oscillator Model, used to 
+# make the following figures:
+
+# Fig. 3(A,B), Fig. 12(B): set gkca=800, vpdh=0.002 (fast bursting)
+# Fig. 7, Fig. 8, Fig. 9, Fig. 10: set gkca=500, vpdh=0.002 (medium bursting)
+# Fig. 8: set gkca=100, vpdh=0.002 (slow bursting)
+
+# Variables:
+#    v -- voltage (mV)
+#    n -- activation of delayed rectifier
+#    c -- free cytosolic calcium concentration (muM)
+#    adp -- cytosolic ADP concentration (muM)
+#    cer -- concentration of free calcium in the endoplasmic reticulum (muM)
+#    cam -- mitocondrial calcium concentration (muM)
+#    f6p -- fructose 6-phosphate concentration (muM)
+#    fbp -- fructose 1,6-bisphosphate concentration (muM)
+
+# Units:
+# time: ms
+# volume: l
+# conductance: pS
+# V: mV
+# I: fA
+# J: muM/ms
+# alpha: mumol/fA/ms
+
+# Initial conditions
+
+v(0)=-40
+n(0)=0
+
+###########################################
+########## slow burst
+# par gkca=100
+### 20 percent of silent phase
+#par c=0.10715418
+#par adp=871.88232
+
+### 20 percent of active phase
+# par c=0.15743826
+# par adp=841.60437
+
+########### medium burst
+par gkca=500
+### 20 percent of silent phase
+# par c=0.079239473
+# par adp=811.98871
+
+### 20 percent of active phase
+par c=0.11459026
+par adp=807.41742
+###########################################
+
+##################################
+## Electrical and Calcium Model ##
+##################################
+
+# Ca2+ current, ica
+num gca=1000, vca=25
+
+num vm=-20, sm=12
+minf = 1/(1+exp((vm-v)/sm))
+
+ica=gca*minf*(v-vca)
+
+
+# Delayed-rectifying K+ current, ik
+num gk=2700, vk=-75
+num taun=20
+
+num nin=-16, sn=5
+ninf=1/(1+exp((nin-v)/sn))
+
+ik=gk*n*(v-vk)
+
+#  Ca2+-activated K+ current, ikca
+num kd=0.5
+
+
+qinf=c^2/(kd^2+c^2)
+ikca=-gkca*qinf*(vk-v) 
+
+# K-ATP channel current, ikatp
+num kdd=17, ktd=26, ktt=1
+num atot=3000
+par gkatpbar=25000
+
+rad=sqrt(-4*adp^2+(atot-adp)^2)
+atp=(atot+rad-adp)/2
+mgadp=0.165*adp
+adp3m=0.135*adp
+atp4m=0.05*atp
+topo=0.08+0.89*mgadp^2/kdd^2+0.16*mgadp/kdd 
+bottomo=(1+mgadp/kdd)^2*(1+atp4m/ktt +adp3m/ktd) 
+katpo=topo/bottomo 
+
+ikatp=gkatpbar*katpo*(v-vk)
+
+# noise
+par sigmaN=300
+wiener w
+noise = sigmaN*w
+
+# The vector field (Electrical and Calcium Model)
+num Cm=5300	
+
+v'=-(ica + ik + ikca + ikatp + noise)/Cm
+n'=-(n-ninf)/taun
+##################################
+##        Metabolic Model       ##
+##################################
+
+aux noise=noise
+aux itot=ica + ik + ikca + ikatp + noise
+aux tsec=t/1000
+
+############################################
+#         XPP: numerical details	   #
+############################################
+
+@ meth=Euler, toler=1.0e-10, atoler=1.0e-10, dt=0.1, total=10000
+@ maxstor=20000000,bounds=10000000, xp=tsec, yp=v
+@ xlo=0, xhi=10, ylo=-80, yhi=-10
+
+
+done

@@ -1,0 +1,80 @@
+# minimal_fastSS.ode
+
+# This computer program was used in the publication "Phantom
+# Bursting May Underlie Electrical Bursting in Single Pancreatic
+# beta-Cells", J. Theoret. Biol., 501:110346, 2020. Authors are
+# Mehran Fazli, Theodore Vo, and Richard Bertram.
+
+# This is the minimal phantom bursting model used to make the
+# following figures:
+
+# Fig. 5, Fig. 6: set gs1=7 (medium bursting)
+# Fig. 6: set gs1=3  (slow bursting)
+
+# Units: V = mV; t = ms; g = pS; I = fA
+
+
+# Initial conditions
+v(0)=-21
+n(0)=0.21
+
+#####################################################
+##### 20 percent of active phase of medium
+# par s1=0.62785167
+# par s2=0.60497886
+# par gs1=7
+
+##### 20 percent of active phase of slow
+# par s1=0.99941498
+# par s2=0.62859106
+# par gs1=3
+
+##### 20 percent of silent phase of medium
+# par s1=0.26149622
+# par s2=0.62840879
+# par gs1=7
+
+##### 20 percent of silent phase of slow
+par s1=0.0059782676
+par s2=0.71857023
+par gs1=3
+######################################################
+
+
+# Parameters
+par sigmaN=0
+par lambda=1.1, gca=280, gk=1300
+par gl=25, vs1=-40, taus1=1000, vs2=-42, taus2=120000, gs2=32
+par vl=-40
+par vca=100, vk=-80, cm=4524
+par tnbar=9.09, vm=-22, vn=-9, sm=7.5, sn=10
+
+# activation and time-constant functions
+minf = 1.0/(1.0+exp((vm-v)/sm))
+ninf = 1.0/(1.0+exp((vn-v)/sn))
+taun = tnbar/(1.0+exp((v-vn)/sn))
+
+# ionic currents
+ica = gca*minf*(v-vca)
+ik = gk*n*(v-vk)
+il = gl*(v-vl)
+is1 = gs1*s1*(v-vk)
+is2 = gs2*s2*(v-vk)
+
+# noise
+wiener w
+inoise  = sigmaN*w
+
+# differential equations
+v' = -( ica + ik + il + is1 + is2 + inoise )/cm
+n' = lambda*(ninf - n)/taun
+
+aux tsec=t/1000
+aus tmin=t/60000
+
+# XPP parameters
+@ meth=euler, dtmax=1, dt=0.1, total=10000, maxstor=100000
+@ bounds=100000000, xp=tsec,  yp=v
+@ xlo=0, xhi=10, ylo=-70, yhi=-10
+
+done
