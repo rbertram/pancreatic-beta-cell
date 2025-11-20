@@ -1,0 +1,182 @@
+# JTB_18b.ode
+#
+# This XPPAUT file contains the program used in "Fast-Slow Analysis
+# of the Integrated Oscillator Model", by J. P. McKenna and R. Bertram,
+# Journal of Theoretical Biology, 457:152-162, 2018.
+# Has the simplified code for PFK.
+
+# Variables:
+#    v -- voltage
+#    n -- activation of delayed rectifier
+#    c -- free cytosolic calcium concentration
+#    adp -- cytosolic ADP concentration
+#    cer -- concentration of free calcium in the endoplasmic reticulum
+#    f6p -- fructose 6-phosphate concentration
+#    fbp -- fructose 1,6-bisphosphate concentration
+
+# Initial conditions
+v(0)=-60
+n(0)=0
+c(0)=0.1
+adp(0)=780
+cer(0)=185
+f6p(0)=60
+fbp(0)=40
+
+# ----------------------------------------------------------------
+# Membrane and Ca components
+
+# sigmaer=cyt volume/ER volume
+num pleak=0.0002, sigmaer=31
+num kserca=0.4
+num taun=20
+
+# where
+num vm=-20, vn=-16, sm=12, sn=5
+minf = 1/(1+exp((vm-v)/sm))
+ninf = 1/(1+exp((vn-v)/sn))
+
+num vk=-75, vca=25
+num gk=2700, cm=5300
+num gca=1000
+num kd=0.5
+
+param gkca=100
+
+# Ikca
+qinf = 1.0/(1+(kd/c)^2)
+ikca = gkca*qinf*(v-vk)
+
+# Calcium Handling
+num alpha=5.18E-18, vcyt=1.15E-12, kpmca=0.2, fca=0.01
+
+# Ikatp
+par gkatpbar=26000
+
+# ICa
+ica = gca*minf*(v-vca)
+
+# Ik
+Ik = gk*n*(v-vk)
+
+# aux gmax = gca*minf + gk*n + gkca*qinf + gkatpbar*katpo
+
+# Ca fluxes
+Jmem = -(alpha/vcyt*Ica + kpmca*c)
+
+Jserca = kserca*c
+Jleak = pleak*(cer - c)
+Jer = Jserca - Jleak
+
+# aux Jer=Jer
+# aux Jpfk=Jpfk
+# aux Jgkpfk=Jgk-Jpfk
+# aux Jpfkpdh=Jpfk-0.5*Jpdh
+
+# -----------------------------------------------------
+# Glycolytic and Keizer-Magnus components
+
+# Parameters
+#  Jgk--glucokinase rate
+#  atot--total adenine nucleotide concentration (micromolar)
+#  k1--Kd for AMP binding
+#  k2--Kd for FBP binding
+#  k3--Kd for F6P binding
+#  k4--Kd for ATP binding
+#  famp,etc--Kd amplification factors for heterotropic binding
+#  Jpdh--phosphate dehydrogenase rate
+
+# Glycolytic parameters
+par kg=10
+par Jgk=0.001
+num atot=3000
+
+# famp = f13
+# fatp = f41
+# ffbp = f23
+# fbt = f42
+# fmt = f43
+
+num k1=30, k2=1, k3=50000, k4=1000
+num famp=0.02, fatp=20, ffbp=0.2, fbt=20, fmt=20
+number kpfkbas=0.06, vpfk=0.01
+
+# Glycolytic expressions
+
+par kCaPDH = 1.0,taus=0.1
+
+cam = 5.*c
+sinfty = cam / (cam + kCaPDH)
+
+aux sinf=sinfty
+
+par vpdh=0.001
+Jpdh = vpdh*s*sqrt(fbp)
+
+ampk1 = amp/k1
+
+fbpk2 = fbp/k2
+
+f6p2k3 = f6p^2/k3
+
+atp2k4 = atp^2/k4
+
+wmax = ampk1*fbpk2*f6p2k3/(famp*ffbp)
+
+wf6p = f6p2k3*(1 + atp2k4/fatp + fbpk2/ffbp + fbpk2/fbt*atp2k4/(ffbp*fatp) + ampk1/famp + ampk1/fmt*atp2k4/(famp*fatp) + ampk1/fmt*fbpk2/fbt*atp2k4/(famp*ffbp*fatp))
+
+wnof6p = 1 + atp2k4 + fbpk2 + fbpk2/fbt*atp2k4 + ampk1 + ampk1/fmt*atp2k4 + ampk1*fbpk2 + ampk1/fmt*fbpk2/fbt*atp2k4
+
+Jpfk= vpfk*(wmax + kpfkbas*wf6p)/( wmax + wf6p + wnof6p)
+
+# KATP channel
+num kdd=17, ktd=26, ktt=1
+par r=1
+num vg=2.2
+num taua=300000, r1=0.35
+
+# nucleotide concentrations
+rad = sqrt((adp-atot)^2-4*adp^2)
+atp = 0.5*(atot-adp+rad)
+amp = adp^2/atp
+ratio = atp/adp
+
+% KATP channel open probability 
+mgadp = 0.165*adp
+adp3m = 0.135*adp
+atp4m = 0.05*atp
+topo = 0.08*(1+2*mgadp/kdd) + 0.89*(mgadp/kdd)^2
+bottomo = (1+mgadp/kdd)^2 * (1+adp3m/ktd+atp4m/ktt)
+katpo = topo/bottomo
+ikatp = gkatpbar*katpo*(v-vk)
+
+# glycolytic feedback onto adp
+y = vg*(Jpdh/(kg+Jpdh))
+fback = r+y
+
+# aux Jmemer=Jmem-Jer
+
+# Differential equations
+
+v' = -(Ik + Ica + Ikca + Ikatp)/cm
+n' = (ninf-n)/taun
+c' = fca*(Jmem - Jer)
+adp' = (atp-adp*exp(fback*(1-c/r1)))/taua
+cer' = fca*sigmaer*Jer
+f6p' = 0.3*(Jgk - Jpfk)
+fbp' = (Jpfk - 0.5*Jpdh)
+s' = (sinfty-s)/taus
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=20.0, total=900000,
+@ maxstor=20000,bounds=10000000, xp=tmin, yp=v
+@ xlo=0, xhi=15, ylo=-70, yhi=-10
+
+aux tsec=t/1000
+aux tmin=t/60000
+aux Atp=atp/1000
+aux ratio=atp/adp
+
+# aux JPDH=Jpdh
+# aux ADPstuff=atp-adp*exp(fback*(1-c/r1))
+
+done
