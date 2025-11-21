@@ -1,0 +1,99 @@
+# alternate-model.ode
+#
+#
+# This XPPAUT file contains the program for the alternate compensation
+# model as described in "Upregulation of an inward rectifying 
+# potassium channel can rescue slow calcium oscillations in K(ATP)
+# channel deficient pancreatic islets", Vehpi Yildirim, Suryakiran 
+# Vadrevu, Benjamin Thompson, Leslie S. Satin, and Richard Bertram,
+# PLoS Computational Biology, 13(7):e1005686, 2017.
+#
+# A leak current is added and K(Ca) current is upregulated.
+
+# Variables:
+#    v -- membrane potential (mV)
+#    skv -- activation variable for delayed rectifing potassium channel (dimensionless)
+#    cac -- intracellular free calcium concentration (uM)
+#    cer -- free calcium concentration in the endoplasmic reticulum (uM)
+#
+#
+###########################
+# Ionic current component #
+###########################
+
+p cm=5300
+
+## Ca channels/pumps
+p fc=0.0086
+p vca=25
+
+### voltage-activated Ca (Ca(V)) current
+p gcav=180, vcav=-20 
+!hcav=1/12
+scavinf=1/(1+exp(vcav-v)^hcav)
+icav=gcav*scavinf*(v-vca)
+
+### plasma membrane Ca ATPase (PMCA) flux 
+!F=20000000/207
+p kpmca=.0414
+jmem=-(icav/2/F + kpmca*cac)
+
+
+### endoplasmic reticulum (ER) flux
+!volctoer=620/23
+p fer=.01
+p kerout=4.14e-5, kerin=.0828
+jerout=kerout*(caer-cac)
+jerin=kerin*cac
+jer=jerout-jerin
+
+## K channels
+p vk=-75
+
+### voltage-activated K (K(V)) current
+p gkv=486, vkv=-16, hkv=.2
+!taukv=1000/9
+skvinf=1/(1+exp(vkv-v)^hkv)
+ikv=gkv*skv*(v-vk)
+
+### Ca-activated K (K(Ca)) current
+p gkca=90, kkcaca=.5, hkcaca=2
+skcainf=1/(1+(kkcaca/cac)^hkcaca)
+ikca=gkca*skcainf*(v-vk)
+
+### Leak Current
+gleak=32.5
+ileak=gleak*(v-vk)
+
+
+##########################
+# Differential Equations #
+##########################
+
+v'=-(ikv+icav+ikca+ileak)/cm
+skv'=(skvinf-skv)/taukv
+cac'=fc*(jmem+jer)
+caer'=-fer*volctoer*jer
+
+
+######################
+# Initial conditions #
+######################
+
+v(0)=-66.1141887342
+skv(0)=.0000443655
+cac(0)=.1092530273
+caer(0)=284.1574308548
+
+
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=20.0, total=1800000
+@ maxstor=20000001,bounds=10000000,
+@ nplot=2 xp1=tmin, yp1=camp, xp2=tmin, yp2=cac
+@ xlo=0, xhi=30, ylo=0, yhi=0.4
+@ BUT=QUIT:fq
+
+
+tmin=t/60000
+aux tmin=t/60000
+
+done
