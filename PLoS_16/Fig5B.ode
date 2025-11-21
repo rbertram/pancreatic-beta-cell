@@ -1,0 +1,159 @@
+# Fig5B.ode
+
+# This program was used to make Figure 5B in "Glucose Oscillations Can
+# Activate an Endogenous Oscillator in Pancreatic Islets", by
+# J. P. McKenna, R. Dhumpa, N. Mukhitov, M. G. Roper, and R. Bertram,
+# PLoS Computational Biology, 12(10):e1005143, doi:10.1371/journal.pcbi.1005143, 2016.
+
+##############
+# Glycolysis #
+##############
+
+## glucose transporter (GLUT)
+p freq=0.00010471975
+global 1 tmin-60. {freq=0.00002094395}
+glce=15.+sin(theta)
+
+## glucose transporter (GLUT)
+p vglut=.01,kglutglc=13.
+jglut=vglut*(1./(1.+kglutglc/glce)-1./(1.+kglutglc/glci))
+
+## glucokinase (GK)
+p vgk=.0111,kgk=13.,hgkglc=4.
+jgk=vgk/(1.+(kgk/glci)^hgkglc)
+
+## glucose 6-phosphate isomerase (GPI)
+!kgpi=10./3.
+
+## phosphofructokinase (PFK), adapted from Smolen 1995
+p vpfk=.0104,kpfkbas=.06,kpfkamp=30.,kpfkfbp=1.,kpfkf6p=5e4,kpfkatp=1e3
+p famp=.02,fmt=20.,ffbp=.2,fbt=20.,fatp=20.
+pow[0..63]=mod(flr(flr([j]/4)*2^(mod([j],4)-3)),2)
+w[0..15]=\
+(amp/kpfkamp)^shift(pow0,4*[j])*\
+(fbp/kpfkfbp)^shift(pow0,4*[j]+1)*\
+(f6p^2/kpfkf6p)^shift(pow0,4*[j]+2)*\
+(atp^2/kpfkatp)^shift(pow0,4*[j]+3)/\
+famp^(shift(pow0,4*[j])*shift(pow0,4*[j]+2))/\
+fmt^(shift(pow0,4*[j])*shift(pow0,4*[j]+3))/\
+ffbp^(shift(pow0,4*[j]+1)*shift(pow0,4*[j]+2))/\
+fbt^(shift(pow0,4*[j]+1)*shift(pow0,4*[j]+3))/\
+fatp^(shift(pow0,4*[j]+2)*shift(pow0,4*[j]+3))
+jpfk=vpfk*((1-kpfkbas)*w14 + \
+kpfkbas*(w2+w3+w6+w7+w10+w11+w14+w15)) \
+/ (sum(0,15)of(shift(w0,i')))
+
+## lower glycolysis (lg)
+p klg=.3
+
+## pyruvate dehydrogenase (PDH)
+p vpdh=.00104
+jpdh=vpdh*sqrt(fbp)
+
+#######################
+# Adenine nucleotides #
+#######################
+p atot=3000.
+amp=adp^2/atp
+adp=.5*(sqrt(atp*(4.*atot-3.*atp))-atp)
+
+## adenine nucleotide translocator (ANT)
+p volmtoc=3.33333e-6
+p vant=1.,kant=1.,vantpdh=2.2,kantpdh=.052,kantca=.35,khydca=0.
+jant=vant*adp*exp((kant+vantpdh/(1.+kantpdh/jpdh))*(1.-cac/kantca))
+
+## hydrolysis (hyd)
+p khydbas=3.33333e-6
+jhyd=(khydca*cac+khydbas)*atp
+
+##################
+# Ionic currents #
+##################
+
+p cm=5300.
+p fc=.00868368059
+p far=96485.339924
+p fer=.00868368059
+
+## calcium (Ca)
+### voltage-activated calcium (Ca(V)) current
+p vca=25.,gcav=1e3,vcav=-20.
+!hcav=1./12.
+scavinf=1./(1.+exp(vcav-v)^hcav)
+icav=gcav*scavinf*(v-vca)
+
+### plasma membrane calcium ATPase (PMCA)
+p kpmca=.23031708485
+jmem=-(icav/2./far+kpmca*cac)
+
+### endoplasmic reticulum calcium
+p volctoer=31.
+p kerout=.00023031708, kerin=.4606341697
+jerout=kerout*(caer-cac)
+jerin=kerin*cac
+jer=jerout-jerin
+
+## potassium (K)
+
+### voltage-activated K (K(V)) current
+p vk=-75.,gkv=2.7e3,vkv=-16.,hkv=.2
+p taukv=20.
+skvinf=1./(1.+exp(vkv-v)^hkv)
+ikv=gkv*skv*(v-vk)
+
+### Ca-activated K (K(Ca)) current
+p gkca=50.,kkcaca=.5,hkcaca=2.
+skcainf=1./(1.+(kkcaca/cac)^hkcaca)
+ikca=gkca*skcainf*(v-vk)
+
+### ATP-sensitive K (K(ATP)) current, adapted from Magnus and Keizer, 1998
+p gkatp=25.5e3,kdd=17.,ktd=26.,ktt=1.
+mgadp=.165*adp
+adp3m=.135*adp
+atp4m=.05*atp
+skatpinf=(.08*(1.+2.*mgadp/kdd)+.89*(mgadp/kdd)^2)\
+/((1.+mgadp/kdd)^2*(1.+adp3m/ktd+atp4m/ktt))
+ikatp=gkatp*skatpinf*(v-vk)
+
+#####################
+# Differential eqns #
+#####################
+
+freeze_1=0.
+freeze_2=0.
+freeze_3=0.
+freeze_4=1.
+freeze_5=1.
+freeze_6=1.
+freeze_7=1.
+freeze_8=1.
+
+glci'=(jglut-jgk)*(1.-freeze_1)
+f6p'=1./(1.+kgpi)*(jgk-jpfk)*(1.-freeze_2)
+fbp'=1./(1.+klg)*(jpfk-.5*jpdh)*(1.-freeze_3)
+atp'=(volmtoc*jant-jhyd)*(1.-freeze_4)
+v'=-(ikv+icav+ikca+ikatp)/cm*(1.-freeze_5)
+skv'=(skvinf-skv)/taukv*(1.-freeze_6)
+cac'=fc*(jmem+jer)*(1.-freeze_7)
+caer'=-fer*volctoer*jer*(1-freeze_8)
+theta'=freq
+
+tmin=t/60000
+aux tmin=tmin
+aux glce=glce
+@ meth=cvode, toler=1.0e-10, atoler=1.0e-10, dt=1.0
+@ maxstor=9999999,bounds=10000000
+@ xp=tmin, yp=fbp
+@ total=7200000, xlo=0, xhi=120, ylo=0, yhi=50
+
+glci(0)=8.17023725
+f6p(0)=51.11675842
+fbp(0)=8.30414141
+atp(0)=1800.
+v(0)=-64.17488117
+skv(0)=6.539079297e-05
+cac(0)=0.05992043725
+caer(0)=130.4211797
+theta(0)=0.
+
+done
